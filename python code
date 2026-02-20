@@ -1,0 +1,297 @@
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+import pandas as pd
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+class CorporateDataAnalyzer:
+
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Corporate Data Analyzer")
+        self.root.geometry("1100x700")
+        self.root.configure(bg="#f4f6f9")
+
+        self.file_path = None
+        self.df = None
+        self.report_df = None
+        self.chart_canvas = None
+
+        self.create_widgets()
+
+    # ==========================
+    # UI DESIGN
+    # ==========================
+    def create_widgets(self):
+
+        title = tk.Label(self.root, text="Corporate Data Analyzer",
+                         font=("Arial", 20, "bold"), bg="#f4f6f9")
+        title.pack(pady=10)
+
+        # File Selection Frame
+        file_frame = tk.LabelFrame(self.root, text="File Selection", padx=10, pady=10)
+        file_frame.pack(fill="x", padx=20, pady=5)
+
+        tk.Button(file_frame, text="Browse File", command=self.browse_file,
+                  width=15).pack(side="left", padx=5)
+
+        tk.Button(file_frame, text="Read File", command=self.read_file,
+                  width=15).pack(side="left", padx=5)
+
+        self.file_label = tk.Label(file_frame, text="No file selected",
+                                   fg="red")
+        self.file_label.pack(side="left", padx=10)
+
+        # Dataset Info
+        self.info_label = tk.Label(self.root, text="", bg="#f4f6f9",
+                                   font=("Arial", 10))
+        self.info_label.pack(pady=5)
+
+        # Report Builder Frame
+        report_frame = tk.LabelFrame(self.root, text="Report Builder", padx=10, pady=10)
+        report_frame.pack(fill="x", padx=20, pady=10)
+
+        tk.Label(report_frame, text="Group By Column").grid(row=0, column=0, padx=5)
+        self.group_dropdown = ttk.Combobox(report_frame, state="readonly", width=20)
+        self.group_dropdown.grid(row=0, column=1, padx=5)
+
+        tk.Label(report_frame, text="Aggregation").grid(row=0, column=2, padx=5)
+        self.agg_dropdown = ttk.Combobox(report_frame, state="readonly", width=15,
+                                         values=["Sum", "Mean", "Max", "Min", "Count", "Median"])
+        self.agg_dropdown.grid(row=0, column=3, padx=5)
+
+        tk.Label(report_frame, text="Value Column").grid(row=0, column=4, padx=5)
+        self.value_dropdown = ttk.Combobox(report_frame, state="readonly", width=20)
+        self.value_dropdown.grid(row=0, column=5, padx=5)
+
+        tk.Button(report_frame, text="Preview Report",
+                  command=self.generate_report).grid(row=0, column=6, padx=10)
+
+        tk.Button(report_frame, text="Export Report",
+                  command=self.export_report).grid(row=0, column=7, padx=5)
+
+        # Report Table
+        self.tree = ttk.Treeview(self.root)
+        self.tree.pack(fill="both", expand=True, padx=20, pady=10)
+
+        # Chart Section
+        chart_frame = tk.LabelFrame(self.root, text="Chart Builder", padx=10, pady=10)
+        chart_frame.pack(fill="x", padx=20, pady=5)
+
+        tk.Label(chart_frame, text="Chart Type").pack(side="left", padx=5)
+        self.chart_dropdown = ttk.Combobox(chart_frame, state="readonly",
+                                           values=["Bar Chart", "Column Chart", "Line Chart", "Pie Chart"])
+        self.chart_dropdown.pack(side="left", padx=5)
+
+        tk.Button(chart_frame, text="Preview Chart",
+                  command=self.generate_chart).pack(side="left", padx=5)
+
+        tk.Button(chart_frame, text="Export Chart",
+                  command=self.export_chart).pack(side="left", padx=5)
+
+        # Chart Display Frame
+        self.chart_frame = tk.Frame(self.root, bg="white")
+        self.chart_frame.pack(fill="both", expand=True, padx=20, pady=10)
+
+    # ==========================
+    # FILE HANDLING
+    # ==========================
+    def browse_file(self):
+        self.file_path = filedialog.askopenfilename(
+            filetypes=[("CSV Files", "*.csv"), ("Excel Files", "*.xlsx *.xls")]
+        )
+        if self.file_path:
+            self.file_label.config(text=os.path.basename(self.file_path), fg="green")
+
+    def read_file(self):
+        if not self.file_path:
+            messagebox.showerror("Error", "Please select a file first.")
+            return
+
+        try:
+            if self.file_path.endswith(".csv"):
+                self.df = pd.read_csv(self.file_path)
+            else:
+                self.df = pd.read_excel(self.file_path)
+
+            rows, cols = self.df.shape
+            columns = ", ".join(self.df.columns)
+
+            self.info_label.config(
+                text=f"Rows: {rows} | Columns: {cols}\nColumn Names: {columns}"
+            )
+
+            self.detect_columns()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to read file:\n{e}")
+
+    # ==========================
+    # COLUMN DETECTION
+    # ==========================
+    def detect_columns(self):
+
+        text_columns = []
+        numeric_columns = []
+
+        for col in self.df.columns:
+            if pd.api.types.is_numeric_dtype(self.df[col]):
+                numeric_columns.append(col)
+            else:
+                try:
+                    self.df[col] = pd.to_numeric(self.df[col])
+                    numeric_columns.append(col)
+                except:
+                    text_columns.append(col)
+
+        self.group_dropdown["values"] = text_columns
+        self.value_dropdown["values"] = numeric_columns
+
+    # ==========================
+    # REPORT GENERATION
+    # ==========================
+    def generate_report(self):
+
+        if self.df is None:
+            messagebox.showerror("Error", "Please read the file first.")
+            return
+
+        group_col = self.group_dropdown.get()
+        agg_method = self.agg_dropdown.get()
+        value_col = self.value_dropdown.get()
+
+        if not group_col or not agg_method or not value_col:
+            messagebox.showerror("Error", "Please select all report options.")
+            return
+
+        try:
+            agg_dict = {
+                "Sum": "sum",
+                "Mean": "mean",
+                "Max": "max",
+                "Min": "min",
+                "Count": "count",
+                "Median": "median"
+            }
+
+            self.report_df = (
+                self.df.groupby(group_col)[value_col]
+                .agg(agg_dict[agg_method])
+                .reset_index()
+                .sort_values(by=value_col, ascending=False)
+            )
+
+            self.display_table(self.report_df)
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Report generation failed:\n{e}")
+
+    def display_table(self, df):
+
+        self.tree.delete(*self.tree.get_children())
+        self.tree["columns"] = list(df.columns)
+        self.tree["show"] = "headings"
+
+        for col in df.columns:
+            self.tree.heading(col, text=col)
+            self.tree.column(col, anchor="center")
+
+        for _, row in df.iterrows():
+            self.tree.insert("", "end", values=list(row))
+
+    # ==========================
+    # EXPORT REPORT
+    # ==========================
+    def export_report(self):
+
+        if self.report_df is None:
+            messagebox.showerror("Error", "No report to export.")
+            return
+
+        folder = os.path.dirname(self.file_path)
+
+        file_type = filedialog.asksaveasfilename(
+            initialdir=folder,
+            defaultextension=".xlsx",
+            filetypes=[("Excel File", "*.xlsx"), ("CSV File", "*.csv")]
+        )
+
+        if not file_type:
+            return
+
+        try:
+            if file_type.endswith(".csv"):
+                self.report_df.to_csv(file_type, index=False)
+            else:
+                self.report_df.to_excel(file_type, index=False)
+
+            messagebox.showinfo("Success", "Report exported successfully.")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Export failed:\n{e}")
+
+    # ==========================
+    # CHART GENERATION
+    # ==========================
+    def generate_chart(self):
+
+        if self.report_df is None:
+            messagebox.showerror("Error", "Generate report first.")
+            return
+
+        chart_type = self.chart_dropdown.get()
+        if not chart_type:
+            messagebox.showerror("Error", "Select a chart type.")
+            return
+
+        for widget in self.chart_frame.winfo_children():
+            widget.destroy()
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+
+        x = self.report_df.iloc[:, 0]
+        y = self.report_df.iloc[:, 1]
+
+        if chart_type == "Bar Chart":
+            ax.barh(x, y)
+        elif chart_type == "Column Chart":
+            ax.bar(x, y)
+        elif chart_type == "Line Chart":
+            ax.plot(x, y, marker="o")
+        elif chart_type == "Pie Chart":
+            ax.pie(y, labels=x, autopct="%1.1f%%")
+
+        ax.set_title("Report Visualization")
+        plt.xticks(rotation=45)
+
+        self.chart_canvas = FigureCanvasTkAgg(fig, master=self.chart_frame)
+        self.chart_canvas.draw()
+        self.chart_canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    # ==========================
+    # EXPORT CHART
+    # ==========================
+    def export_chart(self):
+
+        if self.chart_canvas is None:
+            messagebox.showerror("Error", "No chart to export.")
+            return
+
+        folder = os.path.dirname(self.file_path)
+        file_path = os.path.join(folder, "report_chart.png")
+
+        try:
+            self.chart_canvas.figure.savefig(file_path)
+            messagebox.showinfo("Success", f"Chart saved to:\n{file_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Export failed:\n{e}")
+
+
+# ==========================
+# MAIN EXECUTION
+# ==========================
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = CorporateDataAnalyzer(root)
+    root.mainloop()
